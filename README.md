@@ -85,7 +85,14 @@ require("track-action").setup({
 
 By default, the plugin sets up the following keybind:
 
-- `<leader>ta` - Show statistics in a floating window (displays ALL actions sorted by count)
+- `<leader>ta` - Toggle live statistics window
+
+The stats window:
+- 📍 **Floats on the right side** of the screen (non-intrusive)
+- 🔄 **Updates live** as you use Vim (real-time tracking)
+- 👻 **Doesn't steal focus** - keeps you in your current buffer
+- 📊 Shows **top 20 actions** sorted by count
+- 🎯 **Minimal design** - just action names and counts
 
 You can customize or disable the keybind in your configuration:
 
@@ -102,7 +109,7 @@ require("track-action").setup({
 - `:TrackActionStart` - Start tracking actions
 - `:TrackActionStop` - Stop tracking actions
 - `:TrackActionSave` - Manually save statistics to file
-- `:TrackActionStats` - Show statistics in a floating window
+- `:TrackActionStats` - Toggle the live statistics window
 - `:TrackActionReset` - Reset all statistics (with confirmation)
 - `:TrackActionTop [N]` - Show top N actions (default: 10)
 
@@ -128,8 +135,11 @@ track_action.save()
 -- Reset statistics
 track_action.reset()
 
--- Show statistics window
-track_action.show_stats()
+-- Window controls
+track_action.toggle_stats()  -- Toggle stats window on/off
+track_action.show_stats()    -- Show stats window
+track_action.hide_stats()    -- Hide stats window
+track_action.is_stats_visible()  -- Check if window is visible
 ```
 
 ## How It Works

@@ -100,33 +100,17 @@ function M.top(n)
   return tracker.get_top(n)
 end
 
---- Display statistics in a floating window
-function M.show_stats()
+--- Persistent stats window and buffer
+local stats_win = nil
+local stats_buf = nil
+
+--- Update the stats window content
+local function update_stats_window()
+  if not stats_buf or not vim.api.nvim_buf_is_valid(stats_buf) then
+    return
+  end
+
   local actions, metadata = M.get_stats()
-
-  -- Create buffer
-  local buf = vim.api.nvim_create_buf(false, true)
-
-  -- Prepare content
-  local lines = {
-    "=== TrackAction.nvim Statistics ===",
-    "",
-    string.format("Total actions: %d", metadata.total_actions or 0),
-    string.format("Unique actions: %d", vim.tbl_count(actions)),
-    "",
-  }
-
-  if metadata.first_tracked then
-    table.insert(lines, string.format("First tracked: %s", os.date("%Y-%m-%d %H:%M:%S", metadata.first_tracked)))
-  end
-
-  if metadata.last_updated then
-    table.insert(lines, string.format("Last updated: %s", os.date("%Y-%m-%d %H:%M:%S", metadata.last_updated)))
-  end
-
-  table.insert(lines, "")
-  table.insert(lines, "=== All Actions (sorted by count) ===")
-  table.insert(lines, "")
 
   -- Get all actions sorted by count
   local sorted_actions = {}
@@ -138,42 +122,96 @@ function M.show_stats()
     return a.count > b.count
   end)
 
-  -- Display all actions
-  for i, item in ipairs(sorted_actions) do
-    table.insert(lines, string.format("%3d. %-40s %7d", i, item.action, item.count))
+  -- Prepare minimal content - just the action list
+  local lines = {}
+
+  -- Limit to top 20 for display
+  local display_count = math.min(20, #sorted_actions)
+  for i = 1, display_count do
+    local item = sorted_actions[i]
+    table.insert(lines, string.format("%-20s %4d", item.action, item.count))
   end
 
   if #sorted_actions == 0 then
-    table.insert(lines, "  (no actions tracked yet)")
+    table.insert(lines, "no actions yet")
   end
 
-  -- Set buffer content
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_buf_set_option(buf, "modifiable", false)
-  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+  -- Update buffer content
+  vim.api.nvim_buf_set_option(stats_buf, "modifiable", true)
+  vim.api.nvim_buf_set_lines(stats_buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(stats_buf, "modifiable", false)
+end
 
-  -- Calculate window size (make it wider to accommodate action names)
-  local width = 70
-  local height = math.min(#lines + 2, vim.o.lines - 4)
+--- Display statistics in a floating window on the right side
+function M.show_stats()
+  -- If window already exists and is valid, just update it
+  if stats_win and vim.api.nvim_win_is_valid(stats_win) then
+    update_stats_window()
+    return stats_win
+  end
 
-  -- Create floating window
-  local win = vim.api.nvim_open_win(buf, true, {
+  -- Create buffer if needed
+  if not stats_buf or not vim.api.nvim_buf_is_valid(stats_buf) then
+    stats_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_option(stats_buf, "buftype", "nofile")
+    vim.api.nvim_buf_set_option(stats_buf, "bufhidden", "hide")
+    vim.api.nvim_buf_set_option(stats_buf, "swapfile", false)
+
+    -- Set keymaps to close window
+    vim.api.nvim_buf_set_keymap(stats_buf, "n", "q", "<cmd>lua require('track-action').hide_stats()<cr>", { noremap = true, silent = true })
+    vim.api.nvim_buf_set_keymap(stats_buf, "n", "<Esc>", "<cmd>lua require('track-action').hide_stats()<cr>", { noremap = true, silent = true })
+  end
+
+  -- Window dimensions - narrow width on the right
+  local width = 28
+  local height = math.min(22, vim.o.lines - 2)
+
+  -- Position on right side
+  local col = vim.o.columns - width - 2
+  local row = 1
+
+  -- Create floating window on the right, not stealing focus
+  stats_win = vim.api.nvim_open_win(stats_buf, false, {  -- false = don't focus
     relative = "editor",
     width = width,
     height = height,
-    col = math.floor((vim.o.columns - width) / 2),
-    row = math.floor((vim.o.lines - height) / 2),
+    col = col,
+    row = row,
     style = "minimal",
     border = "rounded",
-    title = " TrackAction.nvim ",
-    title_pos = "center",
+    focusable = false,  -- Can't be focused
+    zindex = 40,  -- Lower z-index to not be too intrusive
   })
 
-  -- Set keymaps to close window
-  vim.api.nvim_buf_set_keymap(buf, "n", "q", "<cmd>close<cr>", { noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<cmd>close<cr>", { noremap = true, silent = true })
+  -- Set window options
+  vim.api.nvim_win_set_option(stats_win, "winblend", 10)  -- Slight transparency
 
-  return win
+  -- Update content
+  update_stats_window()
+
+  return stats_win
+end
+
+--- Hide the stats window
+function M.hide_stats()
+  if stats_win and vim.api.nvim_win_is_valid(stats_win) then
+    vim.api.nvim_win_close(stats_win, true)
+    stats_win = nil
+  end
+end
+
+--- Toggle stats window visibility
+function M.toggle_stats()
+  if stats_win and vim.api.nvim_win_is_valid(stats_win) then
+    M.hide_stats()
+  else
+    M.show_stats()
+  end
+end
+
+--- Check if stats window is visible
+function M.is_stats_visible()
+  return stats_win and vim.api.nvim_win_is_valid(stats_win)
 end
 
 --- Setup auto-save timer
@@ -232,8 +270,8 @@ function M.create_commands()
   end, { desc = "Save statistics to file" })
 
   vim.api.nvim_create_user_command("TrackActionStats", function()
-    M.show_stats()
-  end, { desc = "Show statistics in floating window" })
+    M.toggle_stats()
+  end, { desc = "Toggle statistics floating window" })
 
   vim.api.nvim_create_user_command("TrackActionReset", function()
     M.reset()
@@ -252,7 +290,7 @@ function M.create_commands()
   config.debug("TrackAction: commands created")
 end
 
---- Setup keybind for showing stats
+--- Setup keybind for toggling stats
 function M.setup_keybind()
   local opts = config.get()
 
@@ -262,16 +300,26 @@ function M.setup_keybind()
     return
   end
 
-  -- Set up the keybind
+  -- Set up the keybind to toggle
   vim.keymap.set("n", opts.keybind, function()
-    M.show_stats()
+    M.toggle_stats()
   end, {
     noremap = true,
     silent = true,
-    desc = "Show TrackAction statistics",
+    desc = "Toggle TrackAction statistics",
   })
 
   config.debug("TrackAction: keybind set to %s", opts.keybind)
+end
+
+--- Notify that stats should be updated (called by tracker)
+function M.notify_action_tracked()
+  -- If stats window is visible, update it
+  if M.is_stats_visible() then
+    vim.schedule(function()
+      update_stats_window()
+    end)
+  end
 end
 
 return M

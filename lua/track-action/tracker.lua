@@ -54,6 +54,12 @@ local function track_action(action)
   metadata.last_updated = os.time()
 
   config.debug("Tracker: tracked action: %s (count: %d)", action, actions[action])
+
+  -- Notify main module to update stats window if visible
+  local ok, main = pcall(require, "track-action")
+  if ok and main.notify_action_tracked then
+    main.notify_action_tracked()
+  end
 end
 
 --- Clear the key buffer
