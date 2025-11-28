@@ -141,13 +141,13 @@ local function update_stats_window()
 		for i = 1, display_count do
 			local item = sorted_actions[i]
 			-- Format: " action ........................ count"
-			local action_width = 28
+			local action_width = 18
 			local action_display = item.action
 			if #action_display > action_width then
 				action_display = action_display:sub(1, action_width - 3) .. "..."
 			end
 
-			table.insert(lines, string.format(" %-28s %6d", action_display, item.count))
+			table.insert(lines, string.format(" %-18s %6d", action_display, item.count))
 		end
 
 		if #sorted_actions == 0 then
@@ -206,7 +206,7 @@ function M.show_stats()
 	end
 
 	-- Window dimensions - which-key style at bottom right
-	local width = 40 -- Wider for better readability
+	local width = 28 -- Wider for better readability
 	local height = math.min(15, vim.o.lines - 4)
 
 	-- Position at bottom right (like which-key)

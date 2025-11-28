@@ -208,8 +208,8 @@ local function on_key(key, typed)
   end
 
   -- Not a mapping, feed to parser
-  -- Feed the normalized key to parser
-  local action = parser:feed_key(normalized_typed)
+  -- Feed the normalized key to parser with mode information
+  local action = parser:feed_key(normalized_typed, mode)
 
   if action then
     track_action(action)

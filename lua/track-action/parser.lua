@@ -39,9 +39,11 @@ end
 
 --- Feed a single keystroke to the parser
 ---@param key string The keystroke to process
+---@param mode string|nil Current vim mode (n, v, V, etc.)
 ---@return string|nil Semantic action if command is complete, nil otherwise
-function Parser:feed_key(key)
-	config.debug("Parser: feed_key(%s) state=%s buffer='%s'", key, self.state, self.buffer)
+function Parser:feed_key(key, mode)
+	mode = mode or "n"  -- Default to normal mode
+	config.debug("Parser: feed_key(%s) mode=%s state=%s buffer='%s'", key, mode, self.state, self.buffer)
 
 	-- Handle escape - reset everything
 	if key == "<Esc>" or key == "<C-c>" then
@@ -94,7 +96,7 @@ function Parser:feed_key(key)
 
 	-- Handle operators
 	if commands.is_operator(key) then
-		return self:handle_operator(key)
+		return self:handle_operator(key, mode)
 	end
 
 	-- Handle prefix keys (g, z)
@@ -179,8 +181,16 @@ end
 
 --- Handle operator
 ---@param key string
+---@param mode string Current vim mode
 ---@return string|nil
-function Parser:handle_operator(key)
+function Parser:handle_operator(key, mode)
+	-- In visual mode, operators complete immediately (they operate on selection)
+	if mode == "v" or mode == "V" or mode == "\22" then  -- visual, visual-line, visual-block
+		self.buffer = self.buffer .. key
+		config.debug("Parser: visual mode operator: %s", key)
+		return self:complete_action(key)
+	end
+
 	if self.operator == key then
 		-- Doubled operator (dd, yy, cc)
 		self.buffer = self.buffer .. key
