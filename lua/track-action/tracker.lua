@@ -114,6 +114,37 @@ local function check_mapping(mode)
   return false
 end
 
+--- Convert raw control character bytes to <C-x> format
+---@param char string Single character
+---@return string Formatted key
+local function normalize_ctrl_key(char)
+  local byte = string.byte(char)
+
+  -- Control characters are bytes 1-26
+  if byte >= 1 and byte <= 26 then
+    -- Convert to <C-a> through <C-z> format
+    local letter = string.char(byte + 96)  -- 1 -> 'a', 2 -> 'b', etc.
+    return "<C-" .. letter .. ">"
+  end
+
+  -- Escape (byte 27)
+  if byte == 27 then
+    return "<Esc>"
+  end
+
+  -- Special cases
+  if byte == 9 then
+    return "<Tab>"  -- Also <C-i>
+  end
+
+  if byte == 13 then
+    return "<CR>"  -- Also <C-m>
+  end
+
+  -- Return as-is
+  return char
+end
+
 --- vim.on_key() callback
 ---@param key string Key after mappings
 ---@param typed string Typed keys before mappings
@@ -130,7 +161,12 @@ local function on_key(key, typed)
 
   -- Get current mode
   local mode = vim.api.nvim_get_mode().mode
-  config.debug("Tracker: on_key key='%s' typed='%s' mode='%s'", key, typed, mode)
+
+  -- Normalize control characters
+  local normalized_typed = normalize_ctrl_key(typed)
+
+  config.debug("Tracker: on_key key='%s' typed='%s' normalized='%s' mode='%s'",
+    key, typed, normalized_typed, mode)
 
   -- Only track in enabled modes
   local opts = config.get()
@@ -144,8 +180,14 @@ local function on_key(key, typed)
     return
   end
 
-  -- Add to key buffer
-  key_buffer = key_buffer .. typed
+  -- Always ignore command-line mode (typing after :, /, ?)
+  if mode == "c" then
+    config.debug("Tracker: ignoring command-line mode")
+    return
+  end
+
+  -- Add to key buffer (use normalized version)
+  key_buffer = key_buffer .. normalized_typed
 
   -- Reset key buffer timeout
   if key_buffer_timer then
@@ -166,15 +208,12 @@ local function on_key(key, typed)
   end
 
   -- Not a mapping, feed to parser
-  -- Feed each character in typed sequence
-  for i = 1, #typed do
-    local char = typed:sub(i, i)
-    local action = parser:feed_key(char)
+  -- Feed the normalized key to parser
+  local action = parser:feed_key(normalized_typed)
 
-    if action then
-      track_action(action)
-      clear_key_buffer()
-    end
+  if action then
+    track_action(action)
+    clear_key_buffer()
   end
 end
 

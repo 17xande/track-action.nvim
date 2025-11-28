@@ -201,6 +201,23 @@ M.standalone = {
   ["<C-e>"] = "scroll_down",
   ["<C-y>"] = "scroll_up",
 
+  -- Jump list navigation
+  ["<C-o>"] = "jump_older",
+  ["<C-i>"] = "jump_newer",
+  ["<Tab>"] = "jump_newer",  -- <C-i> is same as Tab in terminal
+
+  -- Tag navigation
+  ["<C-]>"] = "goto_tag",
+  ["<C-t>"] = "tag_pop",
+
+  -- File navigation
+  ["<C-^>"] = "alternate_file",
+  ["<C-6>"] = "alternate_file",  -- same as <C-^>
+
+  -- Screen/info
+  ["<C-g>"] = "file_info",
+  ["<C-l>"] = "redraw",
+
   -- Visual mode
   v = "visual_char",
   V = "visual_line",
