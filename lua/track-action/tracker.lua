@@ -56,10 +56,13 @@ local function track_action(action)
   config.debug("Tracker: tracked action: %s (count: %d)", action, actions[action])
 
   -- Notify main module to update stats window if visible
-  local ok, main = pcall(require, "track-action")
-  if ok and main.notify_action_tracked then
-    main.notify_action_tracked()
-  end
+  -- Use vim.schedule to avoid issues during buffer modifications
+  vim.schedule(function()
+    local ok, main = pcall(require, "track-action")
+    if ok and main.notify_action_tracked then
+      pcall(main.notify_action_tracked)
+    end
+  end)
 end
 
 --- Clear the key buffer
@@ -99,7 +102,7 @@ local function check_mapping(mode)
     config.debug("Tracker: found mapping for '%s': %s", key_buffer, vim.inspect(mapping))
 
     -- Resolve mapping to semantic action
-    local semantic = mappings.resolve_rhs(mapping.rhs, mapping.desc)
+    local semantic = mappings.resolve_rhs(mapping.rhs, mapping.desc, mapping.lhs)
     if semantic then
       track_action(semantic)
       clear_key_buffer()
@@ -196,9 +199,18 @@ function M.start()
   end
   metadata.session_start = os.time()
 
-  -- Register vim.on_key() callback
+  -- Register vim.on_key() callback with error handling wrapper
   ns_id = vim.api.nvim_create_namespace("track_action_tracker")
-  vim.on_key(on_key, ns_id)
+  vim.on_key(function(key, typed)
+    local ok, err = pcall(on_key, key, typed)
+    if not ok then
+      -- Log error but don't break tracking
+      vim.schedule(function()
+        vim.notify("track-action: Error in tracker: " .. tostring(err), vim.log.levels.ERROR)
+        config.debug("Tracker error: %s", tostring(err))
+      end)
+    end
+  end, ns_id)
 
   config.debug("Tracker: started with namespace: %d", ns_id)
 end

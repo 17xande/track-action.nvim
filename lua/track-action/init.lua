@@ -106,40 +106,52 @@ local stats_buf = nil
 
 --- Update the stats window content
 local function update_stats_window()
+  -- Check if buffer and window are valid
   if not stats_buf or not vim.api.nvim_buf_is_valid(stats_buf) then
     return
   end
 
-  local actions, metadata = M.get_stats()
-
-  -- Get all actions sorted by count
-  local sorted_actions = {}
-  for action, count in pairs(actions) do
-    table.insert(sorted_actions, { action = action, count = count })
+  if not stats_win or not vim.api.nvim_win_is_valid(stats_win) then
+    return
   end
 
-  table.sort(sorted_actions, function(a, b)
-    return a.count > b.count
+  -- Wrap in pcall to prevent errors from breaking tracking
+  local ok, err = pcall(function()
+    local actions, metadata = M.get_stats()
+
+    -- Get all actions sorted by count
+    local sorted_actions = {}
+    for action, count in pairs(actions) do
+      table.insert(sorted_actions, { action = action, count = count })
+    end
+
+    table.sort(sorted_actions, function(a, b)
+      return a.count > b.count
+    end)
+
+    -- Prepare minimal content - just the action list
+    local lines = {}
+
+    -- Limit to top 20 for display
+    local display_count = math.min(20, #sorted_actions)
+    for i = 1, display_count do
+      local item = sorted_actions[i]
+      table.insert(lines, string.format("%-20s %4d", item.action, item.count))
+    end
+
+    if #sorted_actions == 0 then
+      table.insert(lines, "no actions yet")
+    end
+
+    -- Update buffer content
+    vim.api.nvim_buf_set_option(stats_buf, "modifiable", true)
+    vim.api.nvim_buf_set_lines(stats_buf, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(stats_buf, "modifiable", false)
   end)
 
-  -- Prepare minimal content - just the action list
-  local lines = {}
-
-  -- Limit to top 20 for display
-  local display_count = math.min(20, #sorted_actions)
-  for i = 1, display_count do
-    local item = sorted_actions[i]
-    table.insert(lines, string.format("%-20s %4d", item.action, item.count))
+  if not ok then
+    config.debug("Error updating stats window: %s", tostring(err))
   end
-
-  if #sorted_actions == 0 then
-    table.insert(lines, "no actions yet")
-  end
-
-  -- Update buffer content
-  vim.api.nvim_buf_set_option(stats_buf, "modifiable", true)
-  vim.api.nvim_buf_set_lines(stats_buf, 0, -1, false, lines)
-  vim.api.nvim_buf_set_option(stats_buf, "modifiable", false)
 end
 
 --- Display statistics in a floating window on the right side
