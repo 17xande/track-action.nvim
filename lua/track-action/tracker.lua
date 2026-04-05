@@ -186,6 +186,18 @@ local function on_key(key, typed)
     return
   end
 
+  -- Ignore replace mode (R, Rv, Rx) - individual replacement chars are not actions
+  if mode == "R" or mode == "Rv" or mode == "Rx" then
+    config.debug("Tracker: ignoring replace mode")
+    return
+  end
+
+  -- Ignore terminal mode
+  if mode == "t" then
+    config.debug("Tracker: ignoring terminal mode")
+    return
+  end
+
   -- Add to key buffer (use normalized version)
   key_buffer = key_buffer .. normalized_typed
 

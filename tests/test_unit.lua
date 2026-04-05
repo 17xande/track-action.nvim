@@ -49,13 +49,13 @@ function run_tests()
   end)
 
   -- Test 4: Parser with count
-  test("Parser strips counts", function()
+  test("Parser preserves [count] prefix", function()
     local parser_mod = require("track-action.parser")
     local parser = parser_mod.new()
 
     parser:feed_key("3")  -- Count
     local action = parser:feed_key("w")  -- Motion
-    assert(action == "w", "Should parse '3w' as 'w', got: " .. tostring(action))
+    assert(action == "[count]w", "Should parse '3w' as '[count]w', got: " .. tostring(action))
   end)
 
   -- Test 5: Parser double operator

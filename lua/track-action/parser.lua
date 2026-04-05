@@ -33,6 +33,7 @@ function Parser:new()
 		buffer = "",
 		prefix = nil,
 		text_object_prefix = nil,
+		needs_char_key = nil,
 	}, self)
 	return parser
 end
@@ -62,6 +63,7 @@ function Parser:feed_key(key, mode)
 
 	-- State: waiting for character after f, t, F, T, r, m, etc.
 	if self.state == "needs_char" then
+		self.motion = self.needs_char_key .. key
 		self.buffer = self.buffer .. key
 		config.debug("Parser: got additional char: %s", key)
 		return self:complete_action()
@@ -75,6 +77,11 @@ function Parser:feed_key(key, mode)
 	-- State: waiting for second character of z-prefixed command
 	if self.state == "z_prefix" then
 		return self:handle_z_prefix(key)
+	end
+
+	-- State: waiting for second character of <C-w>-prefixed command
+	if self.state == "cw_prefix" then
+		return self:handle_cw_prefix(key)
 	end
 
 	-- State: text object prefix (i or a)
@@ -119,18 +126,27 @@ function Parser:feed_key(key, mode)
 		return self:handle_motion(key, motion_name)
 	end
 
+	-- Handle motions/commands that need an additional character (f, F, t, T, r, m, etc.)
+	-- Must be checked before standalone, since some keys (r, m, @, q, ', `)
+	-- appear in both tables and need_char takes priority.
+	if commands.needs_additional_char(key) then
+		self.needs_char_key = key
+		self.buffer = self.buffer .. key
+		self.state = "needs_char"
+		config.debug("Parser: command needs additional char")
+		return nil
+	end
+
 	-- Handle standalone commands
 	local standalone_name = commands.is_standalone(key)
 	if standalone_name then
 		return self:handle_standalone(key, standalone_name)
 	end
 
-	-- Handle commands that need additional character
-	if commands.needs_additional_char(key) then
-		self.buffer = self.buffer .. key
-		self.state = "needs_char"
-		config.debug("Parser: command needs additional char")
-		return nil
+	-- Handle repeat-find motions (; and ,) which are in motion_with_char
+	local mwc_name = commands.motion_with_char[key]
+	if mwc_name then
+		return self:handle_motion(key, mwc_name)
 	end
 
 	-- Unknown key - reset and ignore
@@ -219,6 +235,9 @@ function Parser:handle_prefix(key)
 	elseif key == "z" then
 		self.state = "z_prefix"
 		config.debug("Parser: entering z_prefix state")
+	elseif key == "<C-w>" then
+		self.state = "cw_prefix"
+		config.debug("Parser: entering cw_prefix state")
 	end
 
 	return nil
@@ -284,12 +303,32 @@ function Parser:handle_z_prefix(next_key)
 	return nil
 end
 
+--- Handle <C-w>-prefixed window commands
+---@param next_key string
+---@return string|nil
+function Parser:handle_cw_prefix(next_key)
+	self.buffer = self.buffer .. next_key
+
+	-- Check if it's a known window command
+	local wincmd = commands.get_window_command(next_key)
+	if wincmd then
+		config.debug("Parser: window command: <C-w>%s -> %s", next_key, wincmd)
+		return self:complete_action("<C-w>" .. next_key)
+	end
+
+	-- Unknown window command, reset
+	config.debug("Parser: unknown window command: <C-w>%s", next_key)
+	self:reset()
+	return nil
+end
+
 --- Handle text object (after i/a)
 ---@param obj_key string
 ---@return string|nil
 function Parser:handle_text_object(obj_key)
 	local text_obj = commands.get_text_object(self.text_object_prefix, obj_key)
 	if text_obj then
+		self.motion = self.text_object_prefix .. obj_key
 		self.buffer = self.buffer .. obj_key
 		config.debug("Parser: text object: %s%s -> %s", self.text_object_prefix, obj_key, text_obj)
 		return self:complete_action()
@@ -317,26 +356,53 @@ end
 ---@param cmd_name string
 ---@return string|nil
 function Parser:handle_standalone(key, cmd_name)
+	self.motion = key  -- reuse motion field for the command key
 	self.buffer = self.buffer .. key
 	config.debug("Parser: standalone: %s -> %s", key, cmd_name)
 	return self:complete_action()
 end
 
---- Complete the current action and return semantic name
----@param explicit_action string|nil Override buffer with explicit action
----@return string Semantic action name
+--- Build the normalized action string from parser fields instead of regex
+--- This avoids stripping motions that happen to be digits (like 0)
+---@param explicit_action string|nil Override with explicit action string
+---@return string Normalized action name
 function Parser:complete_action(explicit_action)
-	local action = explicit_action or self.buffer
+	local had_count = self.count1 ~= nil or self.count2 ~= nil
+	local normalized
 
-	-- Normalize: strip leading digits (counts)
-	local normalized = action:gsub("^%d+", "")
+	if explicit_action then
+		-- Explicit action provided (doubled operators, visual mode ops, g-prefix, etc.)
+		normalized = explicit_action
+	else
+		-- Build from buffer, stripping counts and register prefix
+		-- Instead of regex, reconstruct from semantic parts
+		local parts = {}
+		if self.operator then
+			table.insert(parts, self.operator)
+		end
+		if self.motion then
+			table.insert(parts, self.motion)
+		end
 
-	-- Strip register prefix if present
-	normalized = normalized:gsub('^"[a-zA-Z0-9]', "")
+		if #parts > 0 then
+			normalized = table.concat(parts)
+		else
+			-- Fallback: strip counts and register from buffer
+			local buf = self.buffer
+			buf = buf:gsub('^"[a-zA-Z0-9]', "")  -- strip register
+			buf = buf:gsub("^%d+", "")             -- strip leading count
+			normalized = buf
+		end
+	end
 
-	config.debug("Parser: complete_action: buffer='%s' normalized='%s'", action, normalized)
+	-- Prepend [count] if any count was used
+	if had_count and normalized ~= "" then
+		normalized = "[count]" .. normalized
+	end
 
-	-- Reset state
+	config.debug("Parser: complete_action: buffer='%s' normalized='%s' had_count=%s",
+		self.buffer, normalized, tostring(had_count))
+
 	local result = normalized
 	self:reset()
 
@@ -355,6 +421,7 @@ function Parser:reset()
 	self.buffer = ""
 	self.prefix = nil
 	self.text_object_prefix = nil
+	self.needs_char_key = nil
 end
 
 --- Create a new parser instance

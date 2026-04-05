@@ -256,8 +256,7 @@ M.standalone = {
   zR = "open_all_folds",
   zM = "close_all_folds",
 
-  -- Window commands (start with <C-w>)
-  ["<C-w>"] = "window_prefix",  -- requires additional char
+  -- Window commands are handled via <C-w> prefix, not as standalone
 
   -- Ex commands
   [":"] = "ex_command",
@@ -267,7 +266,47 @@ M.standalone = {
   ["<C-c>"] = "cancel",
 }
 
--- Commands that need an additional character
+-- Window commands (<C-w>{char})
+M.window_commands = {
+  h = "window_left",
+  j = "window_down",
+  k = "window_up",
+  l = "window_right",
+  w = "window_next",
+  W = "window_prev",
+  s = "window_split",
+  v = "window_vsplit",
+  c = "window_close",
+  o = "window_only",
+  q = "window_quit",
+  T = "window_tab",
+  r = "window_rotate",
+  R = "window_rotate_reverse",
+  x = "window_exchange",
+  ["+"] = "window_increase_height",
+  ["-"] = "window_decrease_height",
+  [">"] = "window_increase_width",
+  ["<"] = "window_decrease_width",
+  ["="] = "window_equalize",
+  ["_"] = "window_max_height",
+  ["|"] = "window_max_width",
+  n = "window_new",
+  p = "window_prev_access",
+  ["<C-h>"] = "window_left",
+  ["<C-j>"] = "window_down",
+  ["<C-k>"] = "window_up",
+  ["<C-l>"] = "window_right",
+}
+
+--- Get semantic name for a window command
+---@param next_char string Character after <C-w>
+---@return string|nil Semantic name or nil
+function M.get_window_command(next_char)
+  return M.window_commands[next_char]
+end
+
+-- Commands that need an additional character.
+-- Register (") is handled separately by the parser's register state.
 M.needs_char = {
   f = true,
   F = true,
@@ -279,7 +318,6 @@ M.needs_char = {
   ["`"] = true,  -- goto mark
   ["@"] = true,  -- execute macro
   q = true,  -- record macro (or stop recording)
-  ['"'] = true,  -- register selection
 }
 
 -- Prefix keys that introduce multi-char sequences
