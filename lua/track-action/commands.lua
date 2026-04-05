@@ -337,16 +337,24 @@ end
 
 --- Check if a key is a motion
 ---@param key string
----@return boolean|string False if not a motion, semantic name if it is
+---@return string|false Semantic name if it is a motion, false otherwise
 function M.is_motion(key)
-  return M.motions[key] or false
+  local val = M.motions[key]
+  if type(val) == "string" then
+    return val
+  end
+  return false
 end
 
 --- Check if a key is a standalone command
 ---@param key string
----@return boolean|string False if not standalone, semantic name if it is
+---@return string|false Semantic name if it is standalone, false otherwise
 function M.is_standalone(key)
-  return M.standalone[key] or false
+  local val = M.standalone[key]
+  if type(val) == "string" then
+    return val
+  end
+  return false
 end
 
 --- Check if a command needs an additional character

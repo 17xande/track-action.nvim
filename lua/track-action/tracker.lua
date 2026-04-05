@@ -106,7 +106,9 @@ local function check_mapping(mode)
     if semantic then
       track_action(semantic)
       clear_key_buffer()
-      parser:reset()
+      if parser then
+        parser:reset()
+      end
       return true
     end
   end
@@ -206,6 +208,9 @@ local function on_key(key, typed)
     key_buffer_timer:stop()
   end
   key_buffer_timer = vim.loop.new_timer()
+  if not key_buffer_timer then
+    return
+  end
   key_buffer_timer:start(KEY_BUFFER_TIMEOUT, 0, vim.schedule_wrap(on_key_buffer_timeout))
 
   -- Check if key buffer matches a mapping
@@ -337,8 +342,8 @@ function M.get_top(n)
 end
 
 --- Set statistics (used when loading from file)
----@param loaded_actions table
----@param loaded_metadata table
+---@param loaded_actions table|nil
+---@param loaded_metadata table|nil
 function M.set_stats(loaded_actions, loaded_metadata)
   actions = loaded_actions or {}
   metadata = vim.tbl_extend("force", metadata, loaded_metadata or {})

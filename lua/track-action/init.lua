@@ -274,6 +274,9 @@ function M.setup_auto_save()
 	config.debug("TrackAction: setting up auto-save every %dms", opts.auto_save_interval)
 
 	auto_save_timer = vim.loop.new_timer()
+	if not auto_save_timer then
+		return
+	end
 	auto_save_timer:start(
 		opts.auto_save_interval,
 		opts.auto_save_interval,

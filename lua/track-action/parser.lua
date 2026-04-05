@@ -342,7 +342,7 @@ end
 
 --- Handle motion
 ---@param key string
----@param motion_name string
+---@param motion_name string|false
 ---@return string|nil
 function Parser:handle_motion(key, motion_name)
 	self.motion = key
@@ -353,7 +353,7 @@ end
 
 --- Handle standalone command
 ---@param key string
----@param cmd_name string
+---@param cmd_name string|false
 ---@return string|nil
 function Parser:handle_standalone(key, cmd_name)
 	self.motion = key  -- reuse motion field for the command key

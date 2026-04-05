@@ -6,13 +6,16 @@ local config = require("track-action.config")
 
 local M = {}
 
---- Mapping cache
----@type table<string, table>
+--- Mapping cache per mode
+---@type table<string, table<string, table>>
 local mapping_cache = {
   n = {},  -- normal mode
   v = {},  -- visual mode
-  _last_refresh = 0,
 }
+
+--- Last cache refresh time (milliseconds)
+---@type number
+local last_refresh = 0
 
 --- Refresh interval in milliseconds
 local CACHE_REFRESH_INTERVAL = 5000  -- 5 seconds
@@ -55,7 +58,7 @@ local function refresh_mappings(mode)
   end
 
   mapping_cache[mode] = mappings
-  mapping_cache._last_refresh = vim.loop.now()
+  last_refresh = vim.loop.now()
 
   config.debug("Mappings: cached %d mappings for mode %s", vim.tbl_count(mappings), mode)
 end
@@ -70,7 +73,7 @@ function M.get_mapping(sequence, mode)
   -- Refresh cache if needed or if mode cache doesn't exist
   if not config.get().cache_mappings or
      not mapping_cache[mode] or
-     vim.loop.now() - mapping_cache._last_refresh > CACHE_REFRESH_INTERVAL then
+     vim.loop.now() - last_refresh > CACHE_REFRESH_INTERVAL then
     refresh_mappings(mode)
   end
 
@@ -234,7 +237,7 @@ function M.could_be_mapping(partial, mode)
   -- Refresh cache if needed or if mode cache doesn't exist
   if not config.get().cache_mappings or
      not mapping_cache[mode] or
-     vim.loop.now() - mapping_cache._last_refresh > CACHE_REFRESH_INTERVAL then
+     vim.loop.now() - last_refresh > CACHE_REFRESH_INTERVAL then
     refresh_mappings(mode)
   end
 
