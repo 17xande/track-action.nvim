@@ -10,6 +10,77 @@ local M = {}
 --- Auto-save timer
 local auto_save_timer = nil
 
+--- Persistent stats window and buffer
+local stats_win = nil
+local stats_buf = nil
+
+--- Update the stats window content
+local function update_stats_window()
+	-- Check if buffer and window are valid
+	if not stats_buf or not vim.api.nvim_buf_is_valid(stats_buf) then
+		return
+	end
+
+	if not stats_win or not vim.api.nvim_win_is_valid(stats_win) then
+		return
+	end
+
+	-- Wrap in pcall to prevent errors from breaking tracking
+	local ok, err = pcall(function()
+		local actions, _ = M.get_stats()
+
+		-- Get all actions sorted by count
+		local sorted_actions = {}
+		for action, count in pairs(actions) do
+			table.insert(sorted_actions, { action = action, count = count })
+		end
+
+		table.sort(sorted_actions, function(a, b)
+			return a.count > b.count
+		end)
+
+		-- Prepare content with which-key style formatting
+		local lines = {}
+
+		-- Add title
+		table.insert(lines, " Track Actions")
+		table.insert(lines, "")
+
+		-- Limit to top items that fit in window
+		local display_count = math.min(12, #sorted_actions)
+		for i = 1, display_count do
+			local item = sorted_actions[i]
+			local action_width = 18
+			local action_display = item.action
+			if #action_display > action_width then
+				action_display = action_display:sub(1, action_width - 3) .. "..."
+			end
+
+			table.insert(lines, string.format(" %-18s %6d", action_display, item.count))
+		end
+
+		if #sorted_actions == 0 then
+			table.insert(lines, " No actions tracked yet")
+		end
+
+		-- Update buffer content
+		vim.api.nvim_buf_set_option(stats_buf, "modifiable", true)
+		vim.api.nvim_buf_set_lines(stats_buf, 0, -1, false, lines)
+		vim.api.nvim_buf_set_option(stats_buf, "modifiable", false)
+
+		-- Add highlighting for the title (first line)
+		local ns_id = vim.api.nvim_create_namespace("track_action_stats")
+		vim.api.nvim_buf_clear_namespace(stats_buf, ns_id, 0, -1)
+		if #lines > 0 then
+			vim.api.nvim_buf_add_highlight(stats_buf, ns_id, "WhichKeyGroup", 0, 0, -1)
+		end
+	end)
+
+	if not ok then
+		config.debug("Error updating stats window: %s", tostring(err))
+	end
+end
+
 --- Setup track-action.nvim with user configuration
 ---@param user_config table|nil User configuration
 function M.setup(user_config)
@@ -41,6 +112,15 @@ function M.setup(user_config)
 		end,
 		desc = "Save track-action.nvim statistics on exit",
 	})
+
+	-- Update stats window on each action (via callback, not hardcoded)
+	tracker.on_action(function()
+		if M.is_stats_visible() then
+			vim.schedule(function()
+				update_stats_window()
+			end)
+		end
+	end)
 
 	-- Create user commands
 	M.create_commands()
@@ -98,79 +178,6 @@ end
 function M.top(n)
 	n = n or 10
 	return tracker.get_top(n)
-end
-
---- Persistent stats window and buffer
-local stats_win = nil
-local stats_buf = nil
-
---- Update the stats window content
-local function update_stats_window()
-	-- Check if buffer and window are valid
-	if not stats_buf or not vim.api.nvim_buf_is_valid(stats_buf) then
-		return
-	end
-
-	if not stats_win or not vim.api.nvim_win_is_valid(stats_win) then
-		return
-	end
-
-	-- Wrap in pcall to prevent errors from breaking tracking
-	local ok, err = pcall(function()
-		local actions, metadata = M.get_stats()
-
-		-- Get all actions sorted by count
-		local sorted_actions = {}
-		for action, count in pairs(actions) do
-			table.insert(sorted_actions, { action = action, count = count })
-		end
-
-		table.sort(sorted_actions, function(a, b)
-			return a.count > b.count
-		end)
-
-		-- Prepare content with which-key style formatting
-		local lines = {}
-
-		-- Add title
-		table.insert(lines, " Track Actions")
-		table.insert(lines, "")
-
-		-- Limit to top items that fit in window
-		local display_count = math.min(12, #sorted_actions)
-		for i = 1, display_count do
-			local item = sorted_actions[i]
-			-- Format: " action ........................ count"
-			local action_width = 18
-			local action_display = item.action
-			if #action_display > action_width then
-				action_display = action_display:sub(1, action_width - 3) .. "..."
-			end
-
-			table.insert(lines, string.format(" %-18s %6d", action_display, item.count))
-		end
-
-		if #sorted_actions == 0 then
-			table.insert(lines, " No actions tracked yet")
-		end
-
-		-- Update buffer content
-		vim.api.nvim_buf_set_option(stats_buf, "modifiable", true)
-		vim.api.nvim_buf_set_lines(stats_buf, 0, -1, false, lines)
-		vim.api.nvim_buf_set_option(stats_buf, "modifiable", false)
-
-		-- Add highlighting for the title (first line)
-		local ns_id = vim.api.nvim_create_namespace("track_action_stats")
-		vim.api.nvim_buf_clear_namespace(stats_buf, ns_id, 0, -1)
-		if #lines > 0 then
-			-- Highlight title using which-key highlight group
-			vim.api.nvim_buf_add_highlight(stats_buf, ns_id, "WhichKeyGroup", 0, 0, -1)
-		end
-	end)
-
-	if not ok then
-		config.debug("Error updating stats window: %s", tostring(err))
-	end
 end
 
 --- Display statistics in a floating window on the right side
@@ -359,14 +366,17 @@ function M.setup_keybind()
 	config.debug("TrackAction: keybind set to %s", opts.keybind)
 end
 
---- Notify that stats should be updated (called by tracker)
-function M.notify_action_tracked()
-	-- If stats window is visible, update it
-	if M.is_stats_visible() then
-		vim.schedule(function()
-			update_stats_window()
-		end)
-	end
+--- Register a callback for completed actions.
+--- The callback receives (action, data) where data = { action, count, total }.
+---@param fn fun(action: string, data: table)
+function M.on_action(fn)
+	tracker.on_action(fn)
+end
+
+--- Remove a previously registered callback.
+---@param fn fun(action: string, data: table)
+function M.off_action(fn)
+	tracker.off_action(fn)
 end
 
 return M

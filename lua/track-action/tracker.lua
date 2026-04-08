@@ -35,6 +35,28 @@ local key_buffer_timer = nil
 --- Namespace ID for vim.on_key()
 local ns_id = nil
 
+--- Registered callbacks
+---@type fun(action: string, data: table)[]
+local callbacks = {}
+
+--- Register a callback to be called when an action is tracked.
+--- The callback receives the action string and a data table with count info.
+---@param fn fun(action: string, data: table)
+function M.on_action(fn)
+  callbacks[#callbacks + 1] = fn
+end
+
+--- Remove a previously registered callback.
+---@param fn fun(action: string, data: table)
+function M.off_action(fn)
+  for i = #callbacks, 1, -1 do
+    if callbacks[i] == fn then
+      table.remove(callbacks, i)
+      return
+    end
+  end
+end
+
 --- Track a semantic action
 ---@param action string Semantic action name
 local function track_action(action)
@@ -55,13 +77,26 @@ local function track_action(action)
 
   config.debug("Tracker: tracked action: %s (count: %d)", action, actions[action])
 
-  -- Notify main module to update stats window if visible
-  -- Use vim.schedule to avoid issues during buffer modifications
-  vim.schedule(function()
-    local ok, main = pcall(require, "track-action")
-    if ok and main.notify_action_tracked then
-      pcall(main.notify_action_tracked)
+  local data = {
+    action = action,
+    count = actions[action],
+    total = metadata.total_actions,
+  }
+
+  -- Fire registered callbacks
+  for _, fn in ipairs(callbacks) do
+    local ok, err = pcall(fn, action, data)
+    if not ok then
+      config.debug("Tracker: callback error: %s", tostring(err))
     end
+  end
+
+  -- Fire User autocmd (deferred to avoid issues during vim.on_key)
+  vim.schedule(function()
+    vim.api.nvim_exec_autocmds("User", {
+      pattern = "TrackAction",
+      data = data,
+    })
   end)
 end
 
