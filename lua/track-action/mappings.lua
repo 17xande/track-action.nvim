@@ -93,6 +93,19 @@ function M.has_mapping(sequence, mode)
   return M.get_mapping(sequence, mode) ~= nil
 end
 
+--- Replace the resolved mapleader at the start of a key sequence with <leader>.
+--- nvim_get_keymap returns lhs with the leader already resolved (e.g. " sv" when
+--- mapleader is space), but for display we want "<leader>sv".
+---@param key_seq string
+---@return string
+local function normalize_leader(key_seq)
+  local leader = vim.g.mapleader
+  if leader and #leader > 0 and vim.startswith(key_seq, leader) and #key_seq > #leader then
+    return "<leader>" .. key_seq:sub(#leader + 1)
+  end
+  return key_seq
+end
+
 --- Resolve a mapping RHS to a semantic action
 ---@param rhs string Right-hand side of mapping
 ---@param desc string|nil Optional description
@@ -103,13 +116,18 @@ function M.resolve_rhs(rhs, desc, lhs)
 
   -- If RHS is empty and LHS is a single character, treat as native command with description
   -- This handles lua/expr mappings that just add descriptions to native keys
-  if lhs and rhs == "" and #lhs == 1 then
+  if lhs and (not rhs or rhs == "") and #lhs == 1 then
     config.debug("Mappings: empty RHS for single-char LHS, treating as native command")
     return nil
   end
 
-  -- If RHS is empty, we can't resolve it
+  -- If RHS is empty (lua callback mapping), fall back to LHS
   if not rhs or rhs == "" then
+    if lhs then
+      local normalized = normalize_leader(lhs)
+      config.debug("Mappings: empty RHS (lua callback), using lhs: %s", normalized)
+      return normalized
+    end
     return nil
   end
 
@@ -131,14 +149,6 @@ function M.resolve_rhs(rhs, desc, lhs)
     end
   end
 
-  -- If description is available and descriptive, use it
-  if desc and #desc > 0 and #desc < 50 then
-    -- Convert description to semantic name
-    local semantic = desc:lower():gsub("%s+", "_"):gsub("[^%w_]", "")
-    config.debug("Mappings: using description as semantic: %s", semantic)
-    return "custom:" .. semantic
-  end
-
   -- Try to parse RHS as a command
   -- Handle <cmd>...<cr> format
   local cmd_match = rhs:match("<[Cc][Mm][Dd]>(.+)<[Cc][Rr]>")
@@ -155,17 +165,14 @@ function M.resolve_rhs(rhs, desc, lhs)
   end
 
   -- Check if RHS is a simple vim command sequence we recognize
-  if #rhs <= 4 then  -- Short sequences like "dd", "yy", "w", etc.
-    -- Strip any leading/trailing special chars
+  if #rhs <= 4 then
     local clean_rhs = rhs:gsub("^<[^>]+>", ""):gsub("<[^>]+>$", "")
 
-    -- Check if it's a recognized standalone command
     if commands.is_standalone(clean_rhs) then
       config.debug("Mappings: RHS is standalone command: %s", clean_rhs)
       return clean_rhs
     end
 
-    -- Check if it's an operator + motion
     if #clean_rhs == 2 then
       local op = clean_rhs:sub(1, 1)
       local motion = clean_rhs:sub(2, 2)
@@ -176,9 +183,14 @@ function M.resolve_rhs(rhs, desc, lhs)
     end
   end
 
-  -- Fallback: track as custom mapping with LHS or RHS
-  config.debug("Mappings: fallback to custom:rhs")
-  return "custom:" .. rhs:sub(1, 20):gsub("[^%w_]", "_")
+  -- Fallback: use the LHS keys so the user sees what they actually pressed
+  if lhs then
+    local normalized = normalize_leader(lhs)
+    config.debug("Mappings: using lhs keys: %s", normalized)
+    return normalized
+  end
+
+  return nil
 end
 
 --- Classify an ex command into semantic action
