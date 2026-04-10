@@ -106,11 +106,32 @@ local function normalize_leader(key_seq)
   return key_seq
 end
 
---- Resolve a mapping RHS to a semantic action
+--- Look up the native key equivalent for an ex command string.
+---@param cmd string Trimmed ex command (e.g. "vsplit", "wincmd h")
+---@return string|nil Native key equivalent or nil
+local function native_for_ex(cmd)
+  cmd = vim.trim(cmd)
+  -- Direct lookup first
+  if commands.ex_to_native[cmd] then
+    return commands.ex_to_native[cmd]
+  end
+  -- Try just the command name (strip arguments/bangs for simple commands)
+  local cmd_name = cmd:match("^(%w+)$")
+  if cmd_name and commands.ex_to_native[cmd_name] then
+    return commands.ex_to_native[cmd_name]
+  end
+  return nil
+end
+
+--- Resolve a mapping RHS to a tracked action and optional native equivalent.
+--- Returns two values: (action, native).
+---   action: the tracked action string (what the user pressed or the resolved command)
+---   native: the canonical native key equivalent (e.g. "<C-w>v"), or nil if unknown
 ---@param rhs string Right-hand side of mapping
 ---@param desc string|nil Optional description
 ---@param lhs string|nil Left-hand side of mapping
----@return string|nil Semantic action or nil
+---@return string|nil action
+---@return string|nil native
 function M.resolve_rhs(rhs, desc, lhs)
   config.debug("Mappings: resolving RHS: %s (desc: %s, lhs: %s)", rhs or "nil", desc or "none", lhs or "none")
 
@@ -118,7 +139,7 @@ function M.resolve_rhs(rhs, desc, lhs)
   -- This handles lua/expr mappings that just add descriptions to native keys
   if lhs and (not rhs or rhs == "") and #lhs == 1 then
     config.debug("Mappings: empty RHS for single-char LHS, treating as native command")
-    return nil
+    return nil, nil
   end
 
   -- If RHS is empty (lua callback mapping), fall back to LHS
@@ -126,16 +147,16 @@ function M.resolve_rhs(rhs, desc, lhs)
     if lhs then
       local normalized = normalize_leader(lhs)
       config.debug("Mappings: empty RHS (lua callback), using lhs: %s", normalized)
-      return normalized
+      return normalized, nil
     end
-    return nil
+    return nil, nil
   end
 
   -- If RHS equals LHS, this is just a native command with a description (e.g., for which-key)
   -- Return nil to let the parser handle it as a native command
   if lhs and rhs == lhs then
     config.debug("Mappings: RHS equals LHS, treating as native command")
-    return nil
+    return nil, nil
   end
 
   -- Detect common expr mapping pattern: v:count == 0 ? 'g<key>' : '<key>'
@@ -145,7 +166,7 @@ function M.resolve_rhs(rhs, desc, lhs)
     local pattern = "v:count%s*==%s*0%s*%?%s*'g" .. lhs .. "'%s*:%s*'" .. lhs .. "'"
     if rhs:match(pattern) then
       config.debug("Mappings: detected count-based expr mapping, treating as native command")
-      return nil
+      return nil, nil
     end
   end
 
@@ -154,14 +175,16 @@ function M.resolve_rhs(rhs, desc, lhs)
   local cmd_match = rhs:match("<[Cc][Mm][Dd]>(.+)<[Cc][Rr]>")
   if cmd_match then
     config.debug("Mappings: found <cmd> format: %s", cmd_match)
-    return M.classify_ex_command(cmd_match)
+    local native = native_for_ex(cmd_match)
+    return M.classify_ex_command(cmd_match), native
   end
 
   -- Handle :...<CR> format
   local ex_match = rhs:match("^:(.+)<[Cc][Rr]>")
   if ex_match then
     config.debug("Mappings: found ex command: %s", ex_match)
-    return M.classify_ex_command(ex_match)
+    local native = native_for_ex(ex_match)
+    return M.classify_ex_command(ex_match), native
   end
 
   -- Check if RHS is a simple vim command sequence we recognize
@@ -170,7 +193,7 @@ function M.resolve_rhs(rhs, desc, lhs)
 
     if commands.is_standalone(clean_rhs) then
       config.debug("Mappings: RHS is standalone command: %s", clean_rhs)
-      return clean_rhs
+      return clean_rhs, clean_rhs
     end
 
     if #clean_rhs == 2 then
@@ -178,7 +201,7 @@ function M.resolve_rhs(rhs, desc, lhs)
       local motion = clean_rhs:sub(2, 2)
       if commands.is_operator(op) and commands.is_motion(motion) then
         config.debug("Mappings: RHS is operator+motion: %s", clean_rhs)
-        return clean_rhs
+        return clean_rhs, clean_rhs
       end
     end
   end
@@ -187,10 +210,10 @@ function M.resolve_rhs(rhs, desc, lhs)
   if lhs then
     local normalized = normalize_leader(lhs)
     config.debug("Mappings: using lhs keys: %s", normalized)
-    return normalized
+    return normalized, nil
   end
 
-  return nil
+  return nil, nil
 end
 
 --- Classify an ex command into semantic action

@@ -305,6 +305,39 @@ function M.get_window_command(next_char)
   return M.window_commands[next_char]
 end
 
+-- Ex commands that have native normal-mode key equivalents.
+-- Used to provide a canonical action for consumers like coach.nvim,
+-- so both `:vsplit` and `<C-w>v` resolve to the same native key.
+M.ex_to_native = {
+  vsplit = "<C-w>v",
+  vs = "<C-w>v",
+  split = "<C-w>s",
+  sp = "<C-w>s",
+  ["wincmd h"] = "<C-w>h",
+  ["wincmd j"] = "<C-w>j",
+  ["wincmd k"] = "<C-w>k",
+  ["wincmd l"] = "<C-w>l",
+  ["wincmd w"] = "<C-w>w",
+  ["wincmd W"] = "<C-w>W",
+  ["wincmd v"] = "<C-w>v",
+  ["wincmd s"] = "<C-w>s",
+  ["wincmd c"] = "<C-w>c",
+  ["wincmd o"] = "<C-w>o",
+  ["wincmd q"] = "<C-w>q",
+  ["wincmd T"] = "<C-w>T",
+  ["wincmd r"] = "<C-w>r",
+  ["wincmd R"] = "<C-w>R",
+  ["wincmd n"] = "<C-w>n",
+  ["wincmd p"] = "<C-w>p",
+  new = "<C-w>n",
+  vnew = "<C-w>v",
+  close = "<C-w>c",
+  only = "<C-w>o",
+  tabnext = "gt",
+  tabprevious = "gT",
+  tabprev = "gT",
+}
+
 -- Commands that need an additional character.
 -- Register (") is handled separately by the parser's register state.
 M.needs_char = {

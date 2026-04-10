@@ -148,4 +148,109 @@ describe("resolve_rhs", function()
 end)
 
 -- =========================================================================
+-- resolve_rhs: native equivalent (second return value)
+-- =========================================================================
+
+describe("resolve_rhs native equivalent", function()
+  describe("ex commands return native equivalent when known", function()
+    for _, c in ipairs({
+      { "<cmd>vs<cr>",       " |",  "<C-w>v" },
+      { "<cmd>vsplit<cr>",   " |",  "<C-w>v" },
+      { "<cmd>sp<cr>",       " -",  "<C-w>s" },
+      { "<cmd>split<cr>",    " -",  "<C-w>s" },
+      { "<cmd>wincmd h<cr>", " h",  "<C-w>h" },
+      { "<cmd>wincmd j<cr>", " j",  "<C-w>j" },
+      { "<cmd>wincmd k<cr>", " k",  "<C-w>k" },
+      { "<cmd>wincmd l<cr>", " l",  "<C-w>l" },
+      { "<cmd>wincmd w<cr>", " w",  "<C-w>w" },
+    }) do
+      local rhs, lhs, expected_native = c[1], c[2], c[3]
+      it(rhs .. " -> native " .. expected_native, function()
+        local _, native = mappings.resolve_rhs(rhs, nil, lhs)
+        eq(expected_native, native)
+      end)
+    end
+  end)
+
+  describe("ex commands without native equivalent return nil", function()
+    for _, c in ipairs({
+      { "<cmd>w<cr>",  " w"  },
+      { "<cmd>q<cr>",  " q"  },
+      { "<cmd>bd<cr>", " bd" },
+      { "<cmd>Lazy<cr>", " l" },
+    }) do
+      local rhs, lhs = c[1], c[2]
+      it(rhs .. " -> native nil", function()
+        local _, native = mappings.resolve_rhs(rhs, nil, lhs)
+        is_nil(native)
+      end)
+    end
+  end)
+
+  describe("native commands pass through with native = nil", function()
+    it("native single-char returns nil, nil", function()
+      local action, native = mappings.resolve_rhs("", nil, "j")
+      is_nil(action)
+      is_nil(native)
+    end)
+
+    it("rhs == lhs returns nil, nil", function()
+      local action, native = mappings.resolve_rhs("j", nil, "j")
+      is_nil(action)
+      is_nil(native)
+    end)
+  end)
+
+  describe("short vim commands have native = rhs", function()
+    it("standalone dd", function()
+      local action, native = mappings.resolve_rhs("dd", nil, "<leader>x")
+      eq("dd", native)
+    end)
+
+    it("operator+motion dw", function()
+      local action, native = mappings.resolve_rhs("dw", nil, "<leader>x")
+      eq("dw", native)
+    end)
+  end)
+
+  describe("parser-handled actions: native is the action itself", function()
+    it("fallback mapping has no native", function()
+      local _, native = mappings.resolve_rhs("some_complex_thing()", nil, "<leader>x")
+      is_nil(native)
+    end)
+  end)
+end)
+
+-- =========================================================================
+-- ex_to_native table in commands module
+-- =========================================================================
+
+local commands = require("track-action.commands")
+
+describe("ex_to_native", function()
+  it("has entries for vsplit variants", function()
+    eq("<C-w>v", commands.ex_to_native["vsplit"])
+    eq("<C-w>v", commands.ex_to_native["vs"])
+  end)
+
+  it("has entries for split variants", function()
+    eq("<C-w>s", commands.ex_to_native["split"])
+    eq("<C-w>s", commands.ex_to_native["sp"])
+  end)
+
+  it("has entries for wincmd motions", function()
+    eq("<C-w>h", commands.ex_to_native["wincmd h"])
+    eq("<C-w>j", commands.ex_to_native["wincmd j"])
+    eq("<C-w>k", commands.ex_to_native["wincmd k"])
+    eq("<C-w>l", commands.ex_to_native["wincmd l"])
+    eq("<C-w>w", commands.ex_to_native["wincmd w"])
+  end)
+
+  it("returns nil for commands without native equivalent", function()
+    is_nil(commands.ex_to_native["write"])
+    is_nil(commands.ex_to_native["quit"])
+  end)
+end)
+
+-- =========================================================================
 h.summary()

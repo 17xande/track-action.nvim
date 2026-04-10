@@ -59,7 +59,9 @@ end
 
 --- Track a semantic action
 ---@param action string Semantic action name
-local function track_action(action)
+---@param native string|nil Native key equivalent (e.g. "<C-w>v")
+---@param category string|nil "key" (keybinding) or "cmd" (typed ex command); defaults to "key"
+local function track_action(action, native, category)
   if not action or action == "" then
     return
   end
@@ -75,12 +77,14 @@ local function track_action(action)
   metadata.total_actions = metadata.total_actions + 1
   metadata.last_updated = os.time()
 
-  config.debug("Tracker: tracked action: %s (count: %d)", action, actions[action])
+  config.debug("Tracker: tracked action: %s (count: %d, native: %s)", action, actions[action], native or "nil")
 
   local data = {
     action = action,
     count = actions[action],
     total = metadata.total_actions,
+    native = native,
+    category = category or "key",
   }
 
   -- Fire registered callbacks
@@ -98,6 +102,21 @@ local function track_action(action)
       data = data,
     })
   end)
+end
+
+--- Track a typed ex command (e.g. from CmdlineLeave autocmd).
+--- Resolves the command to a semantic action and fires callbacks with category "cmd".
+---@param cmd string The command text (without leading colon)
+function M.track_command(cmd)
+  cmd = vim.trim(cmd or "")
+  if cmd == "" then
+    return
+  end
+  local action, native = mappings.resolve_rhs("<cmd>" .. cmd .. "<cr>", nil, nil)
+  if not action then
+    return
+  end
+  track_action(action, native, "cmd")
 end
 
 --- Clear the key buffer
@@ -137,9 +156,9 @@ local function check_mapping(mode)
     config.debug("Tracker: found mapping for '%s': %s", key_buffer, vim.inspect(mapping))
 
     -- Resolve mapping to semantic action
-    local semantic = mappings.resolve_rhs(mapping.rhs, mapping.desc, mapping.lhs)
+    local semantic, native = mappings.resolve_rhs(mapping.rhs, mapping.desc, mapping.lhs)
     if semantic then
-      track_action(semantic)
+      track_action(semantic, native)
       clear_key_buffer()
       if parser then
         parser:reset()
@@ -264,10 +283,13 @@ local function on_key(key, typed)
   local action = parser:feed_key(normalized_typed, mode)
 
   if action then
-    track_action(action)
+    track_action(action, action)
     clear_key_buffer()
   end
 end
+
+--- Augroup name for CmdlineLeave autocmd
+local CMDLINE_AUGROUP = "TrackActionCmdline"
 
 --- Start tracking
 function M.start()
@@ -303,6 +325,18 @@ function M.start()
     end
   end, ns_id)
 
+  -- Track typed ex commands via CmdlineLeave
+  vim.api.nvim_create_augroup(CMDLINE_AUGROUP, { clear = true })
+  vim.api.nvim_create_autocmd("CmdlineLeave", {
+    group = CMDLINE_AUGROUP,
+    callback = function()
+      if vim.v.event.abort then return end
+      if vim.fn.getcmdtype() ~= ":" then return end
+      local cmd = vim.fn.getcmdline()
+      M.track_command(cmd)
+    end,
+  })
+
   config.debug("Tracker: started with namespace: %d", ns_id)
 end
 
@@ -326,6 +360,9 @@ function M.stop()
     key_buffer_timer:stop()
     key_buffer_timer = nil
   end
+
+  -- Unregister CmdlineLeave autocmd
+  pcall(vim.api.nvim_del_augroup_by_name, CMDLINE_AUGROUP)
 
   -- Clear state
   parser = nil
