@@ -125,6 +125,53 @@ describe("tracker.track_command", function()
 
 end)
 
+describe("g-prefix key buffer with user g-mappings", function()
+  -- Regression: when user has g* mappings (e.g. gd for LSP), the tracker holds
+  -- 'g' waiting to see if it's a mapping prefix. When 'e' follows and 'ge' is not
+  -- a mapping, the old code fed only 'e' to the parser (emitting "e"), not "ge".
+  -- Fix: pending_keys replays all held keys to the parser when no mapping matches.
+  local function setup()
+    vim.keymap.set("n", "gd", function() end, { buffer = 0 })
+    tracker.start()
+    require("track-action.mappings").refresh_cache()
+  end
+
+  local function teardown()
+    tracker.stop()
+    pcall(vim.keymap.del, "n", "gd", { buffer = 0 })
+  end
+
+  it("ge emits 'ge' not 'e' when gd mapping exists", function()
+    setup()
+    local received = nil
+    tracker.on_action(function(action) received = action end)
+    tracker._process_key("g", "n")
+    tracker._process_key("e", "n")
+    teardown()
+    eq("ge", received)
+  end)
+
+  it("gE emits 'gE' not 'E' when gd mapping exists", function()
+    setup()
+    local received = nil
+    tracker.on_action(function(action) received = action end)
+    tracker._process_key("g", "n")
+    tracker._process_key("E", "n")
+    teardown()
+    eq("gE", received)
+  end)
+
+  it("gg emits 'gg' when gd mapping exists", function()
+    setup()
+    local received = nil
+    tracker.on_action(function(action) received = action end)
+    tracker._process_key("g", "n")
+    tracker._process_key("g", "n")
+    teardown()
+    eq("gg", received)
+  end)
+end)
+
 describe("tracker.on_action / off_action", function()
   it("registers callback", function()
     local called = false

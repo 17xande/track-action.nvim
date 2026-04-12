@@ -26,6 +26,12 @@ local metadata = {
 --- Key buffer for potential mapping detection
 local key_buffer = ""
 
+--- Keys buffered in key_buffer but not yet fed to the parser.
+--- When a mapping is being waited on, keys accumulate here.
+--- If no mapping matches they are replayed to the parser all at once.
+---@type string[]
+local pending_keys = {}
+
 --- Timeout for key buffer (milliseconds)
 local KEY_BUFFER_TIMEOUT = 1000
 
@@ -119,12 +125,13 @@ function M.track_command(cmd)
   track_action(action, native, "cmd")
 end
 
---- Clear the key buffer
+--- Clear the key buffer and pending key queue
 local function clear_key_buffer()
   if key_buffer ~= "" then
     config.debug("Tracker: clearing key buffer: '%s'", key_buffer)
     key_buffer = ""
   end
+  pending_keys = {}
 
   if key_buffer_timer then
     key_buffer_timer:stop()
@@ -201,6 +208,51 @@ local function normalize_ctrl_key(char)
   return char
 end
 
+--- Process a normalized typed key against the mapping detector and parser.
+--- Keys are buffered while waiting for a potential multi-key mapping; once
+--- determined not to be a mapping, all buffered keys are replayed to the
+--- parser in order (fixing g-prefix sequences like ge/gE when user has gd etc.)
+---@param normalized_typed string Already-normalized key (e.g. "g", "e", "<C-w>")
+---@param mode string Current vim mode
+local function process_key(normalized_typed, mode)
+  -- Add to key buffer and pending queue
+  key_buffer = key_buffer .. normalized_typed
+  table.insert(pending_keys, normalized_typed)
+
+  -- Reset key buffer timeout
+  if key_buffer_timer then
+    key_buffer_timer:stop()
+  end
+  key_buffer_timer = vim.loop.new_timer()
+  if not key_buffer_timer then
+    return
+  end
+  key_buffer_timer:start(KEY_BUFFER_TIMEOUT, 0, vim.schedule_wrap(on_key_buffer_timeout))
+
+  -- Check if key buffer matches a mapping (clear_key_buffer inside resets pending_keys)
+  if check_mapping(mode) then
+    return
+  end
+
+  -- Check if key buffer could be a mapping (partial match) — keep buffering
+  if mappings.could_be_mapping(key_buffer, mode) then
+    config.debug("Tracker: key buffer could be mapping, waiting: '%s'", key_buffer)
+    return
+  end
+
+  -- Not a mapping. Replay all pending keys to the parser so that held prefix
+  -- keys (e.g. the 'g' in 'ge' when 'gd' is mapped) are fed before the
+  -- completion key. This fixes multi-key native sequences like ge/gE/gg.
+  local local_pending = pending_keys
+  clear_key_buffer()
+  for _, k in ipairs(local_pending) do
+    local a = parser:feed_key(k, mode)
+    if a then
+      track_action(a, a)
+    end
+  end
+end
+
 --- vim.on_key() callback
 ---@param key string Key after mappings
 ---@param typed string Typed keys before mappings
@@ -209,7 +261,7 @@ local function on_key(key, typed)
     return
   end
 
-  -- Ignore empty typed keys
+  -- Ignore empty typed keys (feedkeys always passes empty typed)
   if typed == "" then
     config.debug("Tracker: ignoring empty typed key")
     return
@@ -254,38 +306,7 @@ local function on_key(key, typed)
     return
   end
 
-  -- Add to key buffer (use normalized version)
-  key_buffer = key_buffer .. normalized_typed
-
-  -- Reset key buffer timeout
-  if key_buffer_timer then
-    key_buffer_timer:stop()
-  end
-  key_buffer_timer = vim.loop.new_timer()
-  if not key_buffer_timer then
-    return
-  end
-  key_buffer_timer:start(KEY_BUFFER_TIMEOUT, 0, vim.schedule_wrap(on_key_buffer_timeout))
-
-  -- Check if key buffer matches a mapping
-  if check_mapping(mode) then
-    return
-  end
-
-  -- Check if key buffer could be a mapping (partial match)
-  if mappings.could_be_mapping(key_buffer, mode) then
-    config.debug("Tracker: key buffer could be mapping, waiting: '%s'", key_buffer)
-    return
-  end
-
-  -- Not a mapping, feed to parser
-  -- Feed the normalized key to parser with mode information
-  local action = parser:feed_key(normalized_typed, mode)
-
-  if action then
-    track_action(action, action)
-    clear_key_buffer()
-  end
+  process_key(normalized_typed, mode)
 end
 
 --- Augroup name for CmdlineLeave autocmd
@@ -367,6 +388,7 @@ function M.stop()
   -- Clear state
   parser = nil
   key_buffer = ""
+  pending_keys = {}
 
   config.debug("Tracker: stopped")
 end
@@ -426,6 +448,15 @@ end
 ---@return boolean
 function M.is_running()
   return parser ~= nil
+end
+
+--- Process a pre-normalized key directly, bypassing vim.on_key and mode checks.
+--- Intended for unit tests only — call tracker.start() first to initialize the parser.
+---@param normalized_typed string Already-normalized key (e.g. "g", "e", "<C-w>")
+---@param mode string|nil Vim mode to simulate (defaults to "n")
+function M._process_key(normalized_typed, mode)
+  if not parser then return end
+  process_key(normalized_typed, mode or "n")
 end
 
 return M
