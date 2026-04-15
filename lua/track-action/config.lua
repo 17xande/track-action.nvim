@@ -34,6 +34,10 @@ M.defaults = {
   -- Debug mode (print verbose logs)
   debug = false,
 
+  -- Log file path for debug output (e.g. "/tmp/track-action.log").
+  -- When set, debug messages go to this file instead of vim.notify.
+  log_file = nil,
+
   -- Keybind to show stats window (set to false to disable)
   keybind = "<leader>ta",
 }
@@ -77,14 +81,30 @@ function M.should_exclude(action)
   return false
 end
 
---- Log debug message if debug mode is enabled
+--- Log file handle (opened lazily on first debug write)
+---@type file*|nil
+local _log_file = nil
+
+--- Log debug message if debug mode is enabled.
+--- Writes to log_file when configured, otherwise falls back to vim.notify.
 ---@param msg string
 ---@param ... any Additional arguments to format
 function M.debug(msg, ...)
-  if M.options.debug then
-    local formatted = string.format(msg, ...)
-    vim.notify("[track-action.nvim] " .. formatted, vim.log.levels.DEBUG)
+  if not M.options.debug then
+    return
   end
+  local formatted = string.format(msg, ...)
+  if M.options.log_file then
+    if not _log_file then
+      _log_file = io.open(M.options.log_file, "a")
+    end
+    if _log_file then
+      _log_file:write(os.date("%H:%M:%S") .. " [track-action] " .. formatted .. "\n")
+      _log_file:flush()
+      return
+    end
+  end
+  vim.notify("[track-action.nvim] " .. formatted, vim.log.levels.DEBUG)
 end
 
 return M

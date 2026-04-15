@@ -183,16 +183,21 @@ end
 local function normalize_ctrl_key(char)
   local byte = string.byte(char)
 
-  -- Control characters are bytes 1-26
+  -- Control characters are bytes 1-26 (Ctrl-A through Ctrl-Z)
   if byte >= 1 and byte <= 26 then
-    -- Convert to <C-a> through <C-z> format
     local letter = string.char(byte + 96)  -- 1 -> 'a', 2 -> 'b', etc.
     return "<C-" .. letter .. ">"
   end
 
-  -- Escape (byte 27)
+  -- Escape (byte 27 = Ctrl-[)
   if byte == 27 then
     return "<Esc>"
+  end
+
+  -- Bytes 28-31: Ctrl-\, Ctrl-], Ctrl-^, Ctrl-_
+  if byte >= 28 and byte <= 31 then
+    local symbol = string.char(byte + 64)  -- 28 -> '\', 29 -> ']', 30 -> '^', 31 -> '_'
+    return "<C-" .. symbol .. ">"
   end
 
   -- Special cases
