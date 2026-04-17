@@ -114,13 +114,15 @@ function M.setup(user_config)
 	})
 
 	-- Update stats window on each action (via callback, not hardcoded)
-	tracker.on_action(function()
+	local stats_updater = function()
 		if M.is_stats_visible() then
 			vim.schedule(function()
 				update_stats_window()
 			end)
 		end
-	end)
+	end
+	tracker.on_key_action(stats_updater)
+	tracker.on_cmd_action(stats_updater)
 
 	-- Create user commands
 	M.create_commands()
@@ -366,17 +368,30 @@ function M.setup_keybind()
 	config.debug("TrackAction: keybind set to %s", opts.keybind)
 end
 
---- Register a callback for completed actions.
---- The callback receives (action, data) where data = { action, count, total }.
+--- Register a callback for keybind actions only (category = "key").
+--- The callback receives (action, data) where data = { action, count, total, native, category }.
 ---@param fn fun(action: string, data: table)
-function M.on_action(fn)
-	tracker.on_action(fn)
+function M.on_key_action(fn)
+	tracker.on_key_action(fn)
 end
 
---- Remove a previously registered callback.
+--- Remove a previously registered keybind callback.
 ---@param fn fun(action: string, data: table)
-function M.off_action(fn)
-	tracker.off_action(fn)
+function M.off_key_action(fn)
+	tracker.off_key_action(fn)
+end
+
+--- Register a callback for command actions only (category = "cmd").
+--- The callback receives (action, data) where data = { action, count, total, native, category }.
+---@param fn fun(action: string, data: table)
+function M.on_cmd_action(fn)
+	tracker.on_cmd_action(fn)
+end
+
+--- Remove a previously registered command callback.
+---@param fn fun(action: string, data: table)
+function M.off_cmd_action(fn)
+	tracker.off_cmd_action(fn)
 end
 
 return M

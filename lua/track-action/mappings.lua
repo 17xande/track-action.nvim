@@ -109,7 +109,7 @@ end
 --- Look up the native key equivalent for an ex command string.
 ---@param cmd string Trimmed ex command (e.g. "vsplit", "wincmd h")
 ---@return string|nil Native key equivalent or nil
-local function native_for_ex(cmd)
+function M.native_for_ex(cmd)
   cmd = vim.trim(cmd)
   -- Direct lookup first
   if commands.ex_to_native[cmd] then
@@ -175,7 +175,7 @@ function M.resolve_rhs(rhs, desc, lhs)
   local cmd_match = rhs:match("<[Cc][Mm][Dd]>(.+)<[Cc][Rr]>")
   if cmd_match then
     config.debug("Mappings: found <cmd> format: %s", cmd_match)
-    local native = native_for_ex(cmd_match)
+    local native = M.native_for_ex(cmd_match)
     return M.classify_ex_command(cmd_match), native
   end
 
@@ -183,7 +183,7 @@ function M.resolve_rhs(rhs, desc, lhs)
   local ex_match = rhs:match("^:(.+)<[Cc][Rr]>")
   if ex_match then
     config.debug("Mappings: found ex command: %s", ex_match)
-    local native = native_for_ex(ex_match)
+    local native = M.native_for_ex(ex_match)
     return M.classify_ex_command(ex_match), native
   end
 

@@ -41,26 +41,55 @@ local key_buffer_timer = nil
 --- Namespace ID for vim.on_key()
 local ns_id = nil
 
---- Registered callbacks
+--- Registered callbacks for keybind actions only
 ---@type fun(action: string, data: table)[]
-local callbacks = {}
+local key_callbacks = {}
 
---- Register a callback to be called when an action is tracked.
---- The callback receives the action string and a data table with count info.
+--- Registered callbacks for command actions only
+---@type fun(action: string, data: table)[]
+local cmd_callbacks = {}
+
+--- Helper to add a callback to a list
+---@param list fun(action: string, data: table)[]
 ---@param fn fun(action: string, data: table)
-function M.on_action(fn)
-  callbacks[#callbacks + 1] = fn
+local function add_callback(list, fn)
+  list[#list + 1] = fn
 end
 
---- Remove a previously registered callback.
+--- Helper to remove a callback from a list
+---@param list fun(action: string, data: table)[]
 ---@param fn fun(action: string, data: table)
-function M.off_action(fn)
-  for i = #callbacks, 1, -1 do
-    if callbacks[i] == fn then
-      table.remove(callbacks, i)
+local function remove_callback(list, fn)
+  for i = #list, 1, -1 do
+    if list[i] == fn then
+      table.remove(list, i)
       return
     end
   end
+end
+
+--- Register a callback for keybind actions only.
+---@param fn fun(action: string, data: table)
+function M.on_key_action(fn)
+  add_callback(key_callbacks, fn)
+end
+
+--- Remove a previously registered keybind callback.
+---@param fn fun(action: string, data: table)
+function M.off_key_action(fn)
+  remove_callback(key_callbacks, fn)
+end
+
+--- Register a callback for command actions only.
+---@param fn fun(action: string, data: table)
+function M.on_cmd_action(fn)
+  add_callback(cmd_callbacks, fn)
+end
+
+--- Remove a previously registered command callback.
+---@param fn fun(action: string, data: table)
+function M.off_cmd_action(fn)
+  remove_callback(cmd_callbacks, fn)
 end
 
 --- Track a semantic action
@@ -93,35 +122,35 @@ local function track_action(action, native, category)
     category = category or "key",
   }
 
-  -- Fire registered callbacks
-  for _, fn in ipairs(callbacks) do
+  -- Fire category-specific callbacks
+  local category_cbs = (category == "cmd") and cmd_callbacks or key_callbacks
+  for _, fn in ipairs(category_cbs) do
     local ok, err = pcall(fn, action, data)
     if not ok then
       config.debug("Tracker: callback error: %s", tostring(err))
     end
   end
 
-  -- Fire User autocmd (deferred to avoid issues during vim.on_key)
+  -- Fire category-specific User autocmd (deferred to avoid issues during vim.on_key)
+  local category_pattern = (category == "cmd") and "TrackActionCmd" or "TrackActionKey"
   vim.schedule(function()
     vim.api.nvim_exec_autocmds("User", {
-      pattern = "TrackAction",
+      pattern = category_pattern,
       data = data,
     })
   end)
 end
 
 --- Track a typed ex command (e.g. from CmdlineLeave autocmd).
---- Resolves the command to a semantic action and fires callbacks with category "cmd".
+--- Classifies the command and fires callbacks with category "cmd".
 ---@param cmd string The command text (without leading colon)
 function M.track_command(cmd)
   cmd = vim.trim(cmd or "")
   if cmd == "" then
     return
   end
-  local action, native = mappings.resolve_rhs("<cmd>" .. cmd .. "<cr>", nil, nil)
-  if not action then
-    return
-  end
+  local action = mappings.classify_ex_command(cmd)
+  local native = mappings.native_for_ex(cmd)
   track_action(action, native, "cmd")
 end
 
